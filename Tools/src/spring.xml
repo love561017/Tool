@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd" default-autowire="byName">
+	
+	<bean id="propertyConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+		<property name="locations">
+			<list>
+				<value>file:${user.dir}/jdbc.properties</value>
+			</list>
+		</property>
+	</bean>
+	
+	<bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+		<property name="driverClassName" value="${driver}" />
+		<property name="url" value="${jdbcurl}" />
+		<property name="username" value="${username}" />
+		<property name="password" value="${pwd}" />
+		<!-- 初始化執行緒數  -->
+		<property name="initialSize" value="100"/> 
+		<!-- 物件集區中對象最小個數 -->
+		<property name="minIdle" value="100"/> 
+		<!-- 最大等待連接中的數量,設 0 為沒有限制 -->
+		<property name="maxIdle" value="0"/> 
+		<!-- 可以從物件集區中取出的物件最大個數，為0則表示沒有限制，默認為8  -->
+		<property name="maxActive" value="2400"/> 
+		<!-- 最大等待秒數, 單位為 ms, 超過時間會丟出錯誤資訊 -->
+		<property name="maxWait" value="6000"/> 
+		<!-- 對於事務是否 autoCommit, 預設值為 true -->
+		<property name="defaultAutoCommit" value="true"/>			
+		<!-- 取得物件時是否進行驗證，檢查物件是否有效，預設為false -->
+		<property name="testOnBorrow" value="true"/>
+		<!-- 當已建立的連線閒置時間超過 removeAbandonedTimout 設定值時，就會將連線棄置及移除, 預設為 false -->
+		<property name="removeAbandoned" value="true"/>
+		<!-- 超過閒置秒數的連線會被移除, removeAbandoned 必須為 true. 預設為 300 秒 -->
+		<property name="removeAbandonedTimeout" value="120"/>
+	</bean>
+</beans>
