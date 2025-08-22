@@ -1,5 +1,10 @@
+package tool;
 import java.awt.BorderLayout;
 import java.awt.Font;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -7,6 +12,7 @@ import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Properties;
 
 import javax.swing.JFrame;
 import javax.swing.JTabbedPane;
@@ -14,6 +20,12 @@ import javax.swing.JTabbedPane;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import tool.helper.ConnectionHelper;
+import tool.swing.Encrypt;
+import tool.swing.RptLogToolMain;
+import tool.swing.SqlFmtMain;
+import tool.swing.TableBackupMain;
 
 public class Main extends JFrame {
 	/**
@@ -24,6 +36,7 @@ public class Main extends JFrame {
 	private static JFrame frame;
 
 	private static Connection connection;
+	public static String USER_ID; 
 
 	private final static String GET_CLOUMNS_NAME = "SELECT c.COLUMN_NAME\r\n"
 			+ "  , MAX(ep.value) AS 'Column Description'\r\n" + "FROM INFORMATION_SCHEMA.COLUMNS c\r\n"
@@ -41,6 +54,7 @@ public class Main extends JFrame {
 	
 	public static void main(String[] args) {
 		try {
+			getPorp();
 			dataSourceMap.put("永豐", "SINOPAC");
 			dataSourceMap.put("玉山", "ESUN");
 			dataSourceMap.put("台新", "TSIB");
@@ -68,6 +82,9 @@ public class Main extends JFrame {
 			
 			TableBackupMain tableBackupMain = new TableBackupMain();
 			tp.addTab("資料備份", tableBackupMain.initialize(f));
+			
+			RptLogToolMain rptLogToolMain = new RptLogToolMain();
+			tp.addTab("報表LOG", rptLogToolMain.initialize(f));
 
 			
 
@@ -80,7 +97,17 @@ public class Main extends JFrame {
 
 	}
 	
-	protected static Connection getConnection(String jdbc) throws Exception {
+	public static void getPorp() throws Exception {
+		String localPath = Paths.get("").toAbsolutePath().toString();
+		System.out.println(localPath);
+		Properties prop = new Properties();
+		try (FileInputStream fs = new FileInputStream(localPath + "/jdbc.properties")) {
+			prop.load(fs);
+		}
+		USER_ID = prop.getProperty("userId");
+	}
+	
+	public static Connection getConnection(String jdbc) throws Exception {
 		if (null != connection && connection.isClosed()) {
 			connection = null;
 		}
@@ -95,7 +122,7 @@ public class Main extends JFrame {
 		return connection;
 	}
 
-	protected static String getNames(String jdbc) {
+	public static String getNames(String jdbc) {
 		Connection conn = null;
 		PreparedStatement pstmt = null;
 		ResultSet rs = null;

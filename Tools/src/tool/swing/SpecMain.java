@@ -1,3 +1,4 @@
+package tool.swing;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Font;
@@ -5,25 +6,22 @@ import java.awt.Graphics;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
-import java.io.FileInputStream;
-import java.util.List;
 
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
-import javax.swing.SwingUtilities;
 
-import org.apache.poi.xwpf.usermodel.XWPFComment;
-import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import tool.Main;
+import tool.logic.SqlFormat;
 
 public class SpecMain {
 	/**
