@@ -1,9 +1,7 @@
 package tool.logic;
 
-import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -20,7 +18,6 @@ import net.sf.json.JSONObject;
 public class LineBoot {
 	private static final String CHANNEL_ACCESS_TOKEN = "x1D7qvyKMZ/yyG7wFVA7AQlfLHXX6ACnMF/zytvINl2CtBmw5mcDqyki+aEgsAM0gbDK3P2Xbzo+OPpPwVD1cMnHdMctFQB10iR2O+F8nKv1nZ2tXzc2f0u2rMmhUx7XUKAX2E40TY0MXYQNf0oX7gdB04t89/1O/w1cDnyilFU=";
 	private static final String LINE_BOT_API_URL = "https://api.line.me/v2/bot/";
-//	private static final String TEST_GROUP = "Cb85261cf8754839f7b93627145058153";
 	private static String TEST_GROUP = null;
 	private static final String ME = "Ufcc43832ac6b0156fb5d5210a78a5677";
 	private static int lastDateOfWeek;
@@ -31,8 +28,8 @@ public class LineBoot {
 	// 測試用
 	public static void main(String[] args) throws Exception {
 		getPorp();
-//		sendMsg(TEST_GROUP, "請協助確認本日各環境狀態：", new String[] { ME });
-//		sendMsg(TEST_GROUP, "XXXX");
+		sendMsg(TEST_GROUP, "請協助確認本日各環境狀態：", new String[] { ME });
+		sendMsg(TEST_GROUP, "XXXX");
 	}
 
 	//測試用
@@ -114,36 +111,5 @@ public class LineBoot {
 		}
 		int responseCode = conn.getResponseCode();
 		System.out.println("Response Code: " + responseCode);
-	}
-
-	public static String getUserName(String userId) throws Exception {
-		String urlStr = LINE_BOT_API_URL + "profile/" + userId;
-		URL url = new URL(urlStr);
-		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-		conn.setRequestMethod("GET");
-		conn.setRequestProperty("Authorization", "Bearer " + CHANNEL_ACCESS_TOKEN);
-		conn.setDoInput(true);
-		int responseCode = conn.getResponseCode();
-		if (responseCode == HttpURLConnection.HTTP_OK) {
-			try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
-
-				StringBuilder sb = new StringBuilder();
-				String line;
-				while ((line = br.readLine()) != null) {
-					sb.append(line);
-				}
-				String responseBody = sb.toString();
-				int idx = responseBody.indexOf("\"displayName\":\"");
-				if (idx != -1) {
-					int start = idx + 15; // "displayName":" 長度
-					int end = responseBody.indexOf("\"", start);
-					return responseBody.substring(start, end);
-				} else {
-					return "(無法找到 userName)";
-				}
-			}
-		} else {
-			throw new RuntimeException("HTTP error code: " + responseCode);
-		}
 	}
 }
