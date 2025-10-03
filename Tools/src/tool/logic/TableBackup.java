@@ -4,6 +4,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -16,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import tool.Main;
+import tool.helper.StringHelper;
 import tool.swing.TableBackupMain;
 
 public class TableBackup {
@@ -28,7 +30,8 @@ public class TableBackup {
 
 	public static StringBuffer INSERT_SQL = new StringBuffer().append(" SELECT 'INSERT INTO dbo.' + TABLE_NAME +  ")
 			.append("   '( %s ) \r\n    VALUES( %s ) \r\n GO' AS INSERT_SQL ")
-			.append("   , STRING_AGG(COLUMN_NAME, ', ') AS COLUMNS_NAM ")
+			.append("   , STRING_AGG(CAST(COLUMN_NAME AS NVARCHAR(MAX)), ', ') AS COLUMNS_NAM ")
+			.append("   , STRING_AGG(CAST(DATA_TYPE AS NVARCHAR(MAX)), ', ') AS DATA_TYPE ")
 			.append("   , COUNT(TABLE_NAME) AS COLUMN_COUNT ").append(" FROM INFORMATION_SCHEMA.COLUMNS ")
 			.append(" WHERE TABLE_NAME = ? ").append(" GROUP BY TABLE_NAME ");
 
@@ -70,6 +73,16 @@ public class TableBackup {
 			e.printStackTrace();
 		}
 	}
+	
+	//可以被數值化的全部都數值化，如果欄位是chart會自行隱含轉換
+	public boolean ynDecimal(String tmpVal) {
+		try {
+			new BigDecimal(tmpVal);
+		} catch (Exception e) {
+			return false;
+		}
+		return true;
+	}
 
 	public void genSql(String sql, TableBackupMain.TableBackupParm tp) {
 		PreparedStatement pstmt = null;
@@ -83,11 +96,13 @@ public class TableBackup {
 			String columnsNam = null;
 			String insertSql = null;
 			String oid = null;
+			String[] dataType = null;
 			int columnCount = 0;
 			while (rs.next()) {
 				insertSql = rs.getString("INSERT_SQL");
 				columnsNam = rs.getString("COLUMNS_NAM");
 				columnCount = rs.getInt("COLUMN_COUNT");
+				dataType = rs.getString("DATA_TYPE").split(", ");
 				oid = columnsNam.split(",")[0].trim();
 			}
 			pstmt = conn.prepareStatement(sql.replace("*", columnsNam));
@@ -112,7 +127,7 @@ public class TableBackup {
 					if (null == val) {
 						val = tp.getRb3().isSelected() ? "REPLACE(NEWID(), '-', '')" : "'" + rs.getString(i) + "'";
 					} else {
-						if (null == tmpVal) {
+						if (null == tmpVal || StringHelper.ynMatch(dataType[i-1], "decimal", "int")) {
 							val += ", " + rs.getString(i);
 						} else {
 							val += ", '" + rs.getString(i) + "'";
@@ -126,7 +141,7 @@ public class TableBackup {
 							if (i <= 2) {
 								testSqlVal += ", 'T'";
 							} else {
-								if (null == tmpVal) {
+								if (null == tmpVal || StringHelper.ynMatch(dataType[i-1], "decimal", "int")) {
 									testSqlVal += ", " + rs.getString(i);
 								} else {
 									testSqlVal += ", '" + rs.getString(i) + "'";
