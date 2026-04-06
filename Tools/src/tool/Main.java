@@ -2,8 +2,6 @@ package tool;
 import java.awt.BorderLayout;
 import java.awt.Font;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -22,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import tool.helper.ConnectionHelper;
+import tool.swing.DtoMakerMain;
 import tool.swing.Encrypt;
 import tool.swing.RptLogToolMain;
 import tool.swing.SqlFmtMain;
@@ -41,11 +40,11 @@ public class Main extends JFrame {
 	private final static String GET_CLOUMNS_NAME = "SELECT c.COLUMN_NAME\r\n"
 			+ "  , MAX(ep.value) AS 'Column Description'\r\n" + "FROM INFORMATION_SCHEMA.COLUMNS c\r\n"
 			+ "JOIN sys.extended_properties ep\r\n" + "  ON ep.major_id = OBJECT_ID(c.TABLE_NAME)\r\n"
-			+ "    AND ep.minor_id = c.ORDINAL_POSITION\r\n" + "GROUP BY c.COLUMN_NAME";
+			+ "    AND ep.name = 'COMMENT' AND ep.minor_id = c.ORDINAL_POSITION\r\n" + "GROUP BY c.COLUMN_NAME";
 
 	private final static String GET_TABLES_NAME = "SELECT c.TABLE_NAME\r\n" + "  , ep.value AS 'Table Description'\r\n"
 			+ "FROM INFORMATION_SCHEMA.TABLES c\r\n" + "JOIN sys.extended_properties ep\r\n"
-			+ "  ON ep.major_id = OBJECT_ID(c.TABLE_NAME)\r\n" + "    AND ep.minor_id = 0";
+			+ "  ON ep.major_id = OBJECT_ID(c.TABLE_NAME)\r\n" + "  AND ep.name = 'COMMENT'  AND ep.minor_id = 0";
 
 	public static Map<String, String> tableNamesMap = new HashMap<>();
 	public static Map<String, String> tableColumnsMap = new HashMap<>();
@@ -85,6 +84,9 @@ public class Main extends JFrame {
 			
 			RptLogToolMain rptLogToolMain = new RptLogToolMain();
 			tp.addTab("報表LOG", rptLogToolMain.initialize(f));
+			
+			DtoMakerMain dtoMakerMain = new DtoMakerMain();
+			tp.addTab("DTO產生", dtoMakerMain.initialize(f));
 
 			
 
