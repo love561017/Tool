@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 import tool.helper.ConnectionHelper;
 import tool.swing.DtoMakerMain;
 import tool.swing.Encrypt;
+import tool.swing.GetterSetterCommentMain;
 import tool.swing.RptLogToolMain;
 import tool.swing.SqlFmtMain;
 import tool.swing.TableBackupMain;
@@ -88,7 +89,9 @@ public class Main extends JFrame {
 			DtoMakerMain dtoMakerMain = new DtoMakerMain();
 			tp.addTab("DTO產生", dtoMakerMain.initialize(f));
 
-			
+			GetterSetterCommentMain getterSetterCommentMain = new GetterSetterCommentMain();
+			tp.addTab("get/setter註解", getterSetterCommentMain.initialize(f));
+
 
 			frame.setVisible(true);
 			frame.setAlwaysOnTop(true);
