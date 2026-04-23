@@ -3,6 +3,8 @@ package tool.logic;
 import java.util.*;
 import java.util.regex.*;
 
+import org.apache.commons.lang3.StringUtils;
+
 /**
  * 從舊版 JSP 解析表單欄位，產生對應的 DTO Java 程式碼。
  *
@@ -392,7 +394,15 @@ public class DtoMaker {
 			if (comment != null) {
 				sb.append("    /** ").append(comment).append(" */\n");
 			}
-			sb.append("    private String ").append(f).append(";\n");
+			sb.append("    private");
+			if(StringUtils.endsWith(f, "Lsd") || StringUtils.endsWith(f, "Days")) {
+				sb.append(" Integer ");
+			}else if(StringUtils.endsWith(f, "Amt") || StringUtils.endsWith(f, "Cost")) {
+				sb.append(" BigDecimal ");
+			}else {
+				sb.append(" String ");
+			}
+			sb.append(f).append(";\n");
 		}
 
 		// 子 List 欄位（例如 List<CycleListDto> cycleList）
