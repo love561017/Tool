@@ -20,6 +20,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import tool.helper.ConnectionHelper;
+import tool.swing.BeanMakerMain;
+import tool.swing.DaoSqlMain;
 import tool.swing.DtoMakerMain;
 import tool.swing.Encrypt;
 import tool.swing.GetterSetterCommentMain;
@@ -91,6 +93,12 @@ public class Main extends JFrame {
 
 			GetterSetterCommentMain getterSetterCommentMain = new GetterSetterCommentMain();
 			tp.addTab("get/setter註解", getterSetterCommentMain.initialize(f));
+
+			BeanMakerMain beanMakerMain = new BeanMakerMain();
+			tp.addTab("Bean產生", beanMakerMain.initialize(f));
+
+			DaoSqlMain daoSqlMain = new DaoSqlMain();
+			tp.addTab("daoSQL轉換", daoSqlMain.initialize(f));
 
 
 			frame.setVisible(true);
