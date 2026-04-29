@@ -54,7 +54,7 @@ public class ConnectionHelper {
 				BasicTextEncryptor bte = new BasicTextEncryptor();
 				bte.setPassword(prop.getProperty("username"));
 				basicDataSource.setPassword(bte.decrypt(prop.getProperty("pwd")));
-				basicDataSource.setUrl(basicDataSource.getUrl().replace("@", dbName + "_AM_DEV"));
+				basicDataSource.setUrl(basicDataSource.getUrl().replace("@", dbName));
 			} catch (IOException e) {
 				logger.error("getDataSource error", e);
 			}

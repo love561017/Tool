@@ -57,12 +57,12 @@ public class Main extends JFrame {
 	public static void main(String[] args) {
 		try {
 			getPorp();
-			dataSourceMap.put("永豐", "SINOPAC");
-			dataSourceMap.put("玉山", "ESUN");
-			dataSourceMap.put("台新", "TSIB");
-			dataSourceMap.put("中信", "CTBC");
-			
-			dataSourceMap.put("LINEBANK", "LINEBANK");
+			dataSourceMap.put("永豐", "SINOPAC_AM_DEV");
+			dataSourceMap.put("玉山", "ESUN_AM_DEV");
+			dataSourceMap.put("台新", "TSIB_AM_DEV");
+			dataSourceMap.put("中信", "CTBC_AM_DEV");
+			dataSourceMap.put("中信個人", "CTBC_DD_DEV");
+			dataSourceMap.put("LINEBANK", "LINEBANK_AM_DEV");
 			
 			
 			

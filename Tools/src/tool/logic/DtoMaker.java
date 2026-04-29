@@ -87,12 +87,15 @@ public class DtoMaker {
 	}
 
 	/**
-	 * @param jsp           JSP 原始內容
-	 * @param nameMapping   前綴對應類別名稱，格式："criteria:AmAct05005Dto,amFeeCfgMst:AmFeeCfgMstDto"
-	 *                      可留空，留空時自動以首字大寫+Dto命名
+	 * @param jsp              JSP 原始內容
+	 * @param nameMapping      前綴對應類別名稱，格式："criteria:AmAct05005Dto,amFeeCfgMst:AmFeeCfgMstDto"
+	 *                         可留空，留空時自動以首字大寫+Dto命名
 	 * @param tableColumnsMap  DB 欄位說明對照（可傳 null）
+	 * @param entityFieldTypes entity 欄位型別對照，key=欄位名稱(camelCase)，value=Java型別字串（可傳 null）
+	 *                         例如 {"contrNo":"String","amt":"BigDecimal"}；優先於命名慣例推斷
 	 */
-	public String process(String jsp, String nameMapping, Map<String, String> tableColumnsMap) {
+	public String process(String jsp, String nameMapping, Map<String, String> tableColumnsMap,
+			Map<String, String> entityFieldTypes) {
 		// 解析前綴→類別名稱對應
 		Map<String, String> prefixMap = parsePrefixMapping(nameMapping);
 
@@ -156,7 +159,7 @@ public class DtoMaker {
 
 			sb.append("// ").append(isList ? "[明細] " : "[主檔] ");
 			sb.append(className).append("  (對應 JSP 前綴: ").append(key).append(")\n");
-			sb.append(buildDtoClass(className, fields, subLists, dtoIsListMap, prefixMap, fieldComments, key, tableColumnsMap));
+			sb.append(buildDtoClass(className, fields, subLists, dtoIsListMap, prefixMap, fieldComments, key, tableColumnsMap, entityFieldTypes));
 		}
 
 		return sb.toString();
@@ -383,7 +386,7 @@ public class DtoMaker {
 	private String buildDtoClass(String className, Set<String> fields,
 			List<String> subListKeys, Map<String, Boolean> dtoIsListMap,
 			Map<String, String> prefixMap, Map<String, String> fieldComments,
-			String dtoKey, Map<String, String> tableColumnsMap) {
+			String dtoKey, Map<String, String> tableColumnsMap, Map<String, String> entityFieldTypes) {
 
 		StringBuilder sb = new StringBuilder();
 		sb.append("public class ").append(className).append(" {\n\n");
@@ -394,15 +397,8 @@ public class DtoMaker {
 			if (comment != null) {
 				sb.append("    /** ").append(comment).append(" */\n");
 			}
-			sb.append("    private");
-			if(StringUtils.endsWith(f, "Lsd") || StringUtils.endsWith(f, "Days")) {
-				sb.append(" Integer ");
-			}else if(StringUtils.endsWith(f, "Amt") || StringUtils.endsWith(f, "Cost")) {
-				sb.append(" BigDecimal ");
-			}else {
-				sb.append(" String ");
-			}
-			sb.append(f).append(";\n");
+			String type = resolveFieldType(f, entityFieldTypes);
+			sb.append("    private ").append(type).append(" ").append(f).append(";\n");
 		}
 
 		// 子 List 欄位（例如 List<CycleListDto> cycleList）
@@ -418,7 +414,7 @@ public class DtoMaker {
 
 		// Getter / Setter
 		for (String f : fields) {
-			appendGetterSetter(sb, f, "String");
+			appendGetterSetter(sb, f, resolveFieldType(f, entityFieldTypes));
 		}
 		for (String subKey : subListKeys) {
 			String subClassName = resolveClassName(subKey, prefixMap);
@@ -428,6 +424,25 @@ public class DtoMaker {
 
 		sb.append("}");
 		return sb.toString();
+	}
+
+	/**
+	 * 決定欄位型別。優先查 entityFieldTypes，再依命名慣例推斷，最後預設 String。
+	 */
+	private String resolveFieldType(String fieldName, Map<String, String> entityFieldTypes) {
+		if (entityFieldTypes != null && entityFieldTypes.containsKey(fieldName)) {
+			return entityFieldTypes.get(fieldName);
+		}
+		if (StringUtils.endsWith(fieldName, "Lsd") || StringUtils.endsWith(fieldName, "Days")) {
+			return "Integer";
+		}
+		if (StringUtils.endsWith(fieldName, "Amt") || StringUtils.endsWith(fieldName, "Cost")) {
+			return "BigDecimal";
+		}
+		if ("ver".equals(fieldName)) {
+			return "Timestamp";
+		}
+		return "String";
 	}
 
 	private String resolveComment(String key, Map<String, String> fieldComments,
