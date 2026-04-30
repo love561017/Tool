@@ -7,6 +7,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
@@ -17,6 +18,7 @@ public class DaoSqlMain {
 
     private JTextArea txtInput;
     private JTextArea txtOutput;
+    private JCheckBox chkCamel;
 
     public JPanel initialize(Font f) {
         JPanel jp = new JPanel() {
@@ -43,14 +45,19 @@ public class DaoSqlMain {
         spInput.setBounds(10, 35, 760, 375);
         jp.add(spInput);
 
+        chkCamel = new JCheckBox("別名轉駝峰", true);
+        chkCamel.setBounds(10, 422, 130, 30);
+        chkCamel.setFont(f);
+        jp.add(chkCamel);
+
         JButton btnConvert = new JButton("轉換 →");
-        btnConvert.setBounds(290, 420, 200, 35);
+        btnConvert.setBounds(150, 420, 200, 35);
         btnConvert.setFont(f);
         btnConvert.addActionListener(new ConvertListener());
         jp.add(btnConvert);
 
         JButton btnClear = new JButton("清除");
-        btnClear.setBounds(510, 420, 100, 35);
+        btnClear.setBounds(360, 420, 100, 35);
         btnClear.setFont(f);
         btnClear.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
@@ -74,7 +81,8 @@ public class DaoSqlMain {
         public void actionPerformed(ActionEvent e) {
             try {
                 DaoSqlConverter converter = new DaoSqlConverter();
-                String result = converter.convert(DaoSqlMain.this.txtInput.getText());
+                boolean camel = DaoSqlMain.this.chkCamel.isSelected();
+                String result = converter.convert(DaoSqlMain.this.txtInput.getText(), camel);
                 DaoSqlMain.this.txtOutput.setText(result);
             } catch (Exception ex) {
                 DaoSqlMain.this.txtOutput.setText("ERROR: " + ex.getMessage());
