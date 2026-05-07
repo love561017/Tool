@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import tool.helper.ConnectionHelper;
 import tool.swing.BeanMakerMain;
+import tool.swing.BeanToSqlColumnsMain;
 import tool.swing.DaoSqlMain;
 import tool.swing.DtoMakerMain;
 import tool.swing.Encrypt;
@@ -99,6 +100,9 @@ public class Main extends JFrame {
 
 			DaoSqlMain daoSqlMain = new DaoSqlMain();
 			tp.addTab("daoSQL轉換", daoSqlMain.initialize(f));
+
+			BeanToSqlColumnsMain beanToSqlMain = new BeanToSqlColumnsMain();
+			tp.addTab("BeanToSQLColumns", beanToSqlMain.initialize(f));
 
 
 			frame.setVisible(true);

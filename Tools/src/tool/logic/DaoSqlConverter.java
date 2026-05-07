@@ -1,6 +1,7 @@
 package tool.logic;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -24,9 +25,9 @@ public class DaoSqlConverter {
 
     private static final Pattern PARM_PATTERN = Pattern.compile("'(Parm[^']*)'", Pattern.CASE_INSENSITIVE);
 
-    // Matches SELECT columns with a _LANG\d+ suffix, e.g. ", c.CORP_SNAM_LANG1 AS HQ_SNAM"
+    // Matches SELECT columns with a _LANG\d+ suffix, e.g. ", c.CORP_SNAM_LANG1 AS HQ_SNAM" or ", UPD_CDE_DESC_LANG1"
     private static final Pattern LANG_COL_DETECT = Pattern.compile(
-            "(?i)^(SELECT\\s+|,\\s*)?([A-Za-z_]\\w*)\\.([A-Za-z_]\\w*?)(_LANG\\d+)(?:\\s+AS\\s+([A-Za-z_]\\w*))?\\s*$");
+            "(?i)^(SELECT\\s+|,\\s*)?(?:([A-Za-z_]\\w*)\\.)?([A-Za-z_]\\w*?)(_LANG\\d+)(?:\\s+AS\\s+([A-Za-z_]\\w*))?\\s*$");
 
     // SQL keywords that should NOT be used as alias names
     private static final java.util.Set<String> SQL_KEYWORDS = new java.util.HashSet<>(java.util.Arrays.asList(
@@ -41,6 +42,9 @@ public class DaoSqlConverter {
     /** When false, aliases are kept as lowercase_snake instead of lowerCamelCase. */
     private boolean camelCaseAlias = true;
 
+    /** fieldName (camelCase) → Java type, populated from bean file lookup. */
+    private Map<String, String> beanFieldTypes = Collections.emptyMap();
+
     private static class ChainSeg {
         final boolean isLang;
         final String content;
@@ -50,6 +54,16 @@ public class DaoSqlConverter {
     public DaoSqlConverter setCamelCaseAlias(boolean camelCaseAlias) {
         this.camelCaseAlias = camelCaseAlias;
         return this;
+    }
+
+    public DaoSqlConverter setBeanFieldTypes(Map<String, String> beanFieldTypes) {
+        this.beanFieldTypes = beanFieldTypes != null ? beanFieldTypes : Collections.emptyMap();
+        return this;
+    }
+
+    /** Resolve the scalar method for an alias: use bean field type if available, else scalarString. */
+    private String resolveScalarMethod(String alias) {
+        return tool.helper.StringHelper.scalarMethod(beanFieldTypes.get(alias));
     }
 
     // ─── Entry Point ──────────────────────────────────────────────────────────
@@ -83,6 +97,9 @@ public class DaoSqlConverter {
         result.append("SQLQueryBuilder sb = new SQLQueryBuilder(info);\n");
 
         boolean inSelect = false;
+        boolean inWhere = false;
+        int subqueryDepth = 0;
+        List<String> scalarAliases = new ArrayList<>();
 
         for (String line : lines) {
             String trimmed = line.trim();
@@ -107,39 +124,182 @@ public class DaoSqlConverter {
             }
 
             if (!sqlPart.isEmpty()) {
-                // Update SELECT state BEFORE processing
+                boolean isTopLevel = subqueryDepth == 0;
                 String sqlUpper = sqlPart.trim().toUpperCase();
-                if (sqlUpper.startsWith("SELECT")) {
-                    inSelect = true;
-                } else if (sqlUpper.startsWith("FROM") || sqlUpper.startsWith("WHERE")
-                        || sqlUpper.startsWith("JOIN") || sqlUpper.startsWith("LEFT ")
-                        || sqlUpper.startsWith("INNER") || sqlUpper.startsWith("RIGHT")
-                        || sqlUpper.startsWith("ORDER") || sqlUpper.startsWith("GROUP")
-                        || sqlUpper.startsWith("HAVING")) {
-                    inSelect = false;
+                if (isTopLevel) {
+                    if (sqlUpper.startsWith("SELECT")) {
+                        inSelect = true;
+                        inWhere = false;
+                    } else if (sqlUpper.startsWith("WHERE")) {
+                        inSelect = false;
+                        inWhere = true;
+                    } else if (sqlUpper.startsWith("FROM") || sqlUpper.startsWith("JOIN")
+                            || sqlUpper.startsWith("LEFT ") || sqlUpper.startsWith("INNER")
+                            || sqlUpper.startsWith("RIGHT") || sqlUpper.startsWith("ORDER")
+                            || sqlUpper.startsWith("GROUP") || sqlUpper.startsWith("HAVING")) {
+                        inSelect = false;
+                        inWhere = false;
+                    }
                 }
-                // Lines starting with "," stay in current SELECT state
+                // Lines starting with "," / "AND" / "OR" stay in current section
 
-                result.append(convertSqlLine(sqlPart, inSelect));
+                String leadingWS = getIndent(line);
+
+                if (inWhere && isTopLevel) {
+                    String whereLine = convertSqlWhereLine(sqlPart, leadingWS);
+                    if (!whereLine.isEmpty()) result.append(whereLine);
+                } else {
+                    boolean doAlias = inSelect && isTopLevel;
+                    if (doAlias) scalarAliases.addAll(extractSelectAliases(sqlPart));
+                    result.append(convertSqlLine(sqlPart, doAlias, leadingWS));
+                }
+                subqueryDepth = Math.max(0, subqueryDepth + netParenChangeInSql(sqlPart));
             }
             if (commentPart != null && !commentPart.isEmpty()) {
                 result.append("// ").append(commentPart).append("\n");
             }
         }
 
+        for (String alias : scalarAliases) {
+            result.append("sb.").append(resolveScalarMethod(alias)).append("(\"").append(alias).append("\");\n");
+        }
+
         return result.toString();
     }
 
+    private String convertSqlWhereLine(String sql, String leadingWS) {
+        String upper = sql.trim().toUpperCase();
+        String condition = sql.trim();
+
+        if (upper.startsWith("WHERE ")) {
+            condition = sql.trim().substring(6).trim();
+        } else if (upper.startsWith("AND ")) {
+            condition = sql.trim().substring(4).trim();
+        } else if (upper.startsWith("OR ")) {
+            condition = sql.trim().substring(3).trim();
+        }
+
+        String condUpper = condition.toUpperCase();
+        if (condition.isEmpty() || condUpper.equals("WHERE") || condUpper.equals("AND") || condUpper.equals("OR")) {
+            return "";
+        }
+
+        // Replace 'ParmX' with ? and track the var names in order
+        List<String> parmParams = new ArrayList<>();
+        Matcher parmM = PARM_PATTERN.matcher(condition);
+        StringBuffer sbCond = new StringBuffer();
+        while (parmM.find()) {
+            String rawName = parmM.group(1);
+            parmParams.add(Character.toLowerCase(rawName.charAt(0)) + rawName.substring(1));
+            parmM.appendReplacement(sbCond, "?");
+        }
+        parmM.appendTail(sbCond);
+        condition = sbCond.toString();
+
+        // Derive param variable names from column names in the condition
+        String[] parts = condition.split("\\?", -1);
+        List<String> params = new ArrayList<>();
+        String primaryParamName = null;
+        int parmIdx = 0;
+        for (int i = 0; i < parts.length - 1; i++) {
+            String paramName;
+            if (parmIdx < parmParams.size()) {
+                paramName = parmParams.get(parmIdx++);
+            } else {
+                paramName = deriveParamName(parts[i].trim());
+                if (paramName.equals("param") && primaryParamName != null) {
+                    paramName = primaryParamName + (i + 1);
+                }
+            }
+            if (primaryParamName == null) primaryParamName = paramName;
+            params.add(paramName);
+        }
+
+        return buildWhereAndStatement(condition, params) + ";\n";
+    }
+
+    /** Builds the sb.whereAnd()... chain. params contains one value per '?' in condition. */
+    private String buildWhereAndStatement(String condition, List<String> params) {
+        if (!condition.contains("?")) {
+            return "sb.whereAnd().append(\" " + condition + " \")";
+        }
+
+        String[] parts = condition.split("\\?", -1);
+        StringBuilder sb = new StringBuilder("sb.whereAnd()");
+
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i].trim();
+            if (!part.isEmpty()) {
+                sb.append(".append(\" ").append(part).append(" \")");
+            }
+            if (i < parts.length - 1) {
+                String pv = (i < params.size()) ? params.get(i) : "/* MISSING */";
+                sb.append(".param(").append(pv).append(")");
+            }
+        }
+
+        return sb.toString();
+    }
+
+    private String deriveParamName(String conditionSegment) {
+        Pattern p = Pattern.compile(
+                "([A-Za-z_][\\w.]*)\\s*(?:>=|<=|!=|<>|[=><]|LIKE|BETWEEN)\\s*$",
+                Pattern.CASE_INSENSITIVE);
+        Matcher m = p.matcher(conditionSegment.trim());
+        if (m.find()) {
+            String colRef = m.group(1);
+            String colName = colRef.contains(".") ? colRef.substring(colRef.lastIndexOf('.') + 1) : colRef;
+            return toAlias(colName);
+        }
+        return "param";
+    }
+
+    private List<String> extractSelectAliases(String sql) {
+        List<String> aliases = new ArrayList<>();
+        String trimmed = sql.trim();
+        String upper = trimmed.toUpperCase();
+
+        String colsStr = trimmed;
+        if (upper.startsWith("SELECT ")) {
+            colsStr = trimmed.substring(7).trim();
+        } else if (trimmed.startsWith(",")) {
+            colsStr = trimmed.substring(1).trim();
+        }
+
+        for (String col : splitTopLevelCommas(colsStr)) {
+            col = col.trim();
+            if (col.isEmpty()) continue;
+
+            Matcher langM = LANG_COL_DETECT.matcher(col);
+            if (langM.matches()) {
+                String aliasName = langM.group(5);
+                String baseColName = langM.group(3);
+                aliases.add(aliasName != null ? toAlias(aliasName) : toAlias(baseColName));
+                continue;
+            }
+
+            String transformed = transformSelectContent(col);
+            Matcher m = Pattern.compile("(?i)\\bAS\\s+(\\w+)\\s*$").matcher(transformed.trim());
+            if (m.find()) aliases.add(m.group(1));
+        }
+        return aliases;
+    }
+
     private String convertSqlLine(String sql, boolean inSelect) {
+        return convertSqlLine(sql, inSelect, "");
+    }
+
+    private String convertSqlLine(String sql, boolean inSelect, String leadingWS) {
+        String pfx = leadingWS.isEmpty() ? " " : leadingWS;
         if (inSelect) {
-            String langLine = tryBuildLangLine(sql);
+            String langLine = tryBuildLangLine(sql, pfx);
             if (langLine != null) return langLine + "\n";
             sql = transformSelectContent(sql);
         }
 
         Matcher m = PARM_PATTERN.matcher(sql);
         if (!m.find()) {
-            return "sb.append(\" " + sql + " \");\n";
+            return "sb.append(\"" + pfx + sql + " \");\n";
         }
 
         // Build chained append with .param() for each 'ParmXXX'
@@ -154,7 +314,7 @@ public class DaoSqlConverter {
             String varName = Character.toLowerCase(rawName.charAt(0)) + rawName.substring(1);
 
             if (first) {
-                line.append("sb.append(\" ").append(sqlBefore).append(" \").param(").append(varName).append(")");
+                line.append("sb.append(\"" + pfx + "").append(sqlBefore).append(" \").param(").append(varName).append(")");
                 first = false;
             } else {
                 line.append(".append(\" ").append(sqlBefore).append(" \").param(").append(varName).append(")");
@@ -243,11 +403,14 @@ public class DaoSqlConverter {
                 continue;
             }
 
-            // scalarList.add() → sb.scalarString()
+            // scalarList.add() → sb.scalarXxx()
             Matcher scalarM = SCALAR_PATTERN.matcher(trimmed);
             if (scalarM.find()) {
-                String scalarMethod = toScalarMethod(scalarM.group(2));
-                result.append(indent).append("sb.").append(scalarMethod).append("(\"").append(toAlias(scalarM.group(1))).append("\");\n");
+                String alias = toAlias(scalarM.group(1));
+                String scalarMethod = scalarM.group(2) != null
+                        ? toScalarMethod(scalarM.group(2))
+                        : resolveScalarMethod(alias);
+                result.append(indent).append("sb.").append(scalarMethod).append("(\"").append(alias).append("\");\n");
                 continue;
             }
 
@@ -302,7 +465,7 @@ public class DaoSqlConverter {
                 if (shouldAlias) {
                     Matcher singleM = Pattern.compile("^sb\\.append\\(\"([^\"]*)\"\\);$").matcher(trimmed);
                     if (singleM.matches()) {
-                        String expanded = expandMultiColumnSelect(singleM.group(1), indent);
+                        String expanded = expandMultiColumnSelect(singleM.group(1), indent, selectColumnsStarted);
                         if (expanded != null) {
                             subqueryDepth += netParenChange(trimmed);
                             selectColumnsStarted = true;
@@ -351,17 +514,22 @@ public class DaoSqlConverter {
      * returns the chained sb.append line using appendLang; otherwise returns null.
      */
     private String tryBuildLangLine(String sql) {
+        return tryBuildLangLine(sql, " ");
+    }
+
+    private String tryBuildLangLine(String sql, String leadingWS) {
         Matcher m = LANG_COL_DETECT.matcher(sql.trim());
         if (!m.matches()) return null;
 
         String prefix      = m.group(1) != null ? m.group(1) : "";  // ", " or "SELECT " or ""
-        String tableAlias  = m.group(2);   // e.g. "c"
+        String tableAlias  = m.group(2);   // e.g. "c", may be null when no table prefix
         String baseColName = m.group(3);   // e.g. "CORP_SNAM"
         String aliasName   = m.group(5);   // e.g. "HQ_SNAM", may be null
 
         String camelAlias  = (aliasName != null) ? toAlias(aliasName) : toAlias(baseColName);
+        String tablePrefix = (tableAlias != null) ? tableAlias + "." : "";
 
-        return "sb.append(\" " + prefix + tableAlias + ".\").appendLang(\"" + baseColName + "\").append(\"  AS " + camelAlias + " \");";
+        return "sb.append(\"" + leadingWS + prefix + tablePrefix + "\").appendLang(\"" + baseColName + "\").append(\"  AS " + camelAlias + " \");";
     }
 
     /**
@@ -370,20 +538,17 @@ public class DaoSqlConverter {
      * e.g. "CONTR_NO" → "contrNo" (camel) or "contr_no" (snake)
      */
     private String toScalarMethod(String basicType) {
-        if (basicType == null) return "scalarString";
-        switch (basicType.toUpperCase()) {
-            case "STRING":      return "scalarString";
-            case "BIG_DECIMAL": return "scalarDecimal";
-            case "INTEGER":     return "scalarInteger";
-            case "TIMESTAMP":   return "scalarTime";
-            default:            return "scalarString";
-        }
+        return tool.helper.StringHelper.scalarMethod(basicType);
     }
 
     private String toAlias(String name) {
         name = name.trim();
         if (!camelCaseAlias) return name;
         String[] parts = name.split("_");
+        // Already camelCase (no underscores, mixed case) — return as-is
+        if (parts.length == 1 && !name.equals(name.toUpperCase()) && !name.equals(name.toLowerCase())) {
+            return name;
+        }
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < parts.length; i++) {
             if (parts[i].isEmpty()) continue;
@@ -465,7 +630,15 @@ public class DaoSqlConverter {
             String content = single.group(1);
             String langLine = tryBuildLangLine(content.trim());
             if (langLine != null) return langLine;
-            String processed = transformSelectContent(content.trim());
+            String trimmedContent = content.trim();
+            if (trimmedContent.toUpperCase().startsWith("SELECT ")) {
+                String colPart = trimmedContent.substring(7).trim();
+                if (!colPart.isEmpty()) {
+                    String colTransformed = transformSelectContent(colPart);
+                    return "sb.append(\" SELECT \");\n" + indent + "sb.append(\"        " + colTransformed + " \");";
+                }
+            }
+            String processed = transformSelectContent(trimmedContent);
             // Preserve a leading space inside the string literal
             return "sb.append(\" " + processed + " \");";
         }
@@ -512,7 +685,7 @@ public class DaoSqlConverter {
      * expands them into individual sb.append lines with camelCase AS aliases.
      * Returns null when there is only one column (let existing logic handle it).
      */
-    private String expandMultiColumnSelect(String rawContent, String indent) {
+    private String expandMultiColumnSelect(String rawContent, String indent, boolean firstColNeedsComma) {
         String trimmed = rawContent.trim();
         boolean hasSelect = trimmed.toUpperCase().startsWith("SELECT ");
         String colsStr = hasSelect ? trimmed.substring(7).trim() : trimmed;
@@ -533,13 +706,23 @@ public class DaoSqlConverter {
         }
         if (filtered.size() <= 1) return null;
 
+        boolean useIndent = hasSelect || firstColNeedsComma;
         StringBuilder result = new StringBuilder();
+        if (hasSelect) {
+            result.append(indent).append("sb.append(\" SELECT \");\n");
+        }
         for (int i = 0; i < filtered.size(); i++) {
-            String sqlInput = (i == 0 && hasSelect)
-                    ? "SELECT " + filtered.get(i)
-                    : "," + filtered.get(i);
-            String transformed = transformSelectContent(sqlInput);
-            result.append(indent).append("sb.append(\" ").append(transformed).append(" \");\n");
+            String col = filtered.get(i);
+            boolean addComma = (i > 0) || (!hasSelect && firstColNeedsComma);
+            String transformed = transformSelectContent(addComma ? "," + col : col);
+            if (useIndent && !addComma) {
+                result.append(indent).append("sb.append(\"        ").append(transformed).append(" \");\n");
+            } else if (useIndent) {
+                String withoutComma = transformed.startsWith(",") ? transformed.substring(1).trim() : transformed;
+                result.append(indent).append("sb.append(\"      , ").append(withoutComma).append(" \");\n");
+            } else {
+                result.append(indent).append("sb.append(\" ").append(transformed).append(" \");\n");
+            }
         }
         return result.toString();
     }
@@ -623,6 +806,23 @@ public class DaoSqlConverter {
         return out.toString();
     }
 
+    /** Net change in parenthesis depth in a raw SQL fragment (ignores parens inside single-quoted strings). */
+    private int netParenChangeInSql(String sql) {
+        int net = 0;
+        boolean inStr = false;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (c == '\'') {
+                if (inStr && i + 1 < sql.length() && sql.charAt(i + 1) == '\'') i++; // escaped ''
+                else inStr = !inStr;
+            } else if (!inStr) {
+                if      (c == '(') net++;
+                else if (c == ')') net--;
+            }
+        }
+        return net;
+    }
+
     /** Net change in parenthesis depth from all string literals in a sb.append line. */
     private int netParenChange(String sbAppendLine) {
         Matcher m = Pattern.compile("\"([^\"]*)\"").matcher(sbAppendLine);
@@ -650,10 +850,11 @@ public class DaoSqlConverter {
 
         // Strip leading "SELECT " or "," prefix from the first plain segment
         String linePrefix = "";
+        boolean selectSeparated = false;
         if (!segs.isEmpty() && !segs.get(0).isLang) {
             String first = segs.get(0).content;
             if (first.toUpperCase().startsWith("SELECT ")) {
-                linePrefix = "SELECT ";
+                selectSeparated = true;
                 String rest = first.substring(7).trim();
                 if (rest.isEmpty()) segs.remove(0); else segs.set(0, new ChainSeg(false, rest));
             } else if (first.startsWith(",")) {
@@ -673,10 +874,27 @@ public class DaoSqlConverter {
         if (cols.isEmpty()) return null;
 
         StringBuilder result = new StringBuilder();
+        if (selectSeparated) {
+            result.append(indent).append("sb.append(\" SELECT \");\n");
+        }
+        boolean applyIndent = selectSeparated || firstColNeedsComma;
         for (int i = 0; i < cols.size(); i++) {
-            result.append(renderColumnGroup(cols.get(i), i == 0 ? linePrefix : ",", indent));
+            String rendered = renderColumnGroup(cols.get(i), i == 0 ? linePrefix : ",", indent);
+            if (applyIndent) {
+                boolean isFirstColAfterSelect = selectSeparated && i == 0;
+                rendered = applySelectIndent(rendered, isFirstColAfterSelect);
+            }
+            result.append(rendered);
         }
         return result.toString();
+    }
+
+    private String applySelectIndent(String rendered, boolean isFirst) {
+        if (isFirst) {
+            return rendered.replaceFirst("sb\\.append\\(\" ", "sb.append(\"        ");
+        } else {
+            return rendered.replaceFirst("sb\\.append\\(\" ,", "sb.append(\"      , ");
+        }
     }
 
     /** Extract the content of the first string literal in an sb.append("...") call. */
@@ -729,13 +947,13 @@ public class DaoSqlConverter {
             newCondition = ifLine;
         }
 
-        // Find inner sb.append(conditionStr) line only.
+        // Find inner sb.append line (conditionStr variant OR direct append).
         // values.add() inside the block was already added to valuesQueue during the
         // first pass, so consume it from there (keeps queue ordering correct).
         String appendLine = null;
         for (int i = 1; i < block.size(); i++) {
             String t = block.get(i).trim();
-            if (t.startsWith("sb.append(conditionStr)")) {
+            if (t.startsWith("sb.append(conditionStr)") || t.startsWith("sb.append(\"")) {
                 appendLine = t;
             }
         }
@@ -743,14 +961,25 @@ public class DaoSqlConverter {
         result.append(indent).append(newCondition).append(" {\n");
 
         if (appendLine != null) {
-            Matcher sqlM = Pattern.compile("\\.append\\(\"([^\"]+)\"\\)\\s*;").matcher(appendLine);
-            if (sqlM.find()) {
-                String sql = sqlM.group(1).trim();
-                String sqlBeforeQ = sql.endsWith("?") ? sql.substring(0, sql.length() - 1).trim() : sql;
-                String sqlClean = sqlBeforeQ.replaceFirst("(?i)^(AND|WHERE)\\s+", "").trim();
-                String pv = valuesQueue.isEmpty() ? "/* MISSING */" : valuesQueue.poll();
+            String sql = null;
+            if (appendLine.startsWith("sb.append(conditionStr)")) {
+                Matcher sqlM = Pattern.compile("\\.append\\(\"([^\"]+)\"\\)\\s*;").matcher(appendLine);
+                if (sqlM.find()) sql = sqlM.group(1).trim();
+            } else {
+                Matcher sqlM = Pattern.compile("^sb\\.append\\(\"([^\"]+)\"\\)\\s*;$").matcher(appendLine);
+                if (sqlM.matches()) sql = sqlM.group(1).trim();
+            }
+
+            if (sql != null) {
+                String sqlClean = sql.replaceFirst("(?i)^(AND|WHERE)\\s+", "").trim();
+                List<String> params = new ArrayList<>();
+                for (int qi = 0; qi < sqlClean.length(); qi++) {
+                    if (sqlClean.charAt(qi) == '?') {
+                        params.add(valuesQueue.isEmpty() ? "/* MISSING */" : valuesQueue.poll());
+                    }
+                }
                 result.append(indent).append("    ")
-                      .append("sb.whereAnd().append(\" ").append(sqlClean).append(" \").param(").append(pv).append(");\n");
+                      .append(buildWhereAndStatement(sqlClean, params)).append(";\n");
             } else {
                 result.append(indent).append("    ").append(appendLine).append("\n");
             }

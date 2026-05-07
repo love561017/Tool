@@ -119,8 +119,8 @@ public class SqlFormat {
 							.trim((temp.length == 0 ? tempLineToUpper.replace("JOIN", "") : temp[1]).replace("@", ""));
 					newDesc = TABLE_NAMES_MAP.get(table.split(" ")[0]);
 					asName = " (" + table.split(" ")[1].toLowerCase() + ")";
-				} else if (tempLineToUpper.indexOf("AS") > 0) {
-					String[] temp = tempLineToUpper.split("AS");
+				} else if (tempLineToUpper.indexOf(" AS ") > 0) {
+					String[] temp = tempLineToUpper.split(" AS ");
 					String column = StringUtils
 							.trim((temp.length == 0 ? tempLineToUpper.replace("AS", "") : temp[1]).replace("@", ""));
 					newDesc = TABLE_COLUMNS_MAP.get(column);
@@ -128,7 +128,7 @@ public class SqlFormat {
 					String column = StringUtils.trim(line.split("\\.")[1].replace("@", "").replace(",", ""));
 					newDesc = TABLE_COLUMNS_MAP.get(column);
 				} else {
-					String column = StringUtils.trim(line.replace("@", "").replace(",", ""));
+					String column = StringUtils.trim(line.replace("@", "").replace(",", "").replace("SELECT", ""));
 					newDesc = null == TABLE_COLUMNS_MAP.get(column) ? TABLE_NAMES_MAP.get(column)
 							: TABLE_COLUMNS_MAP.get(column);
 				}

@@ -162,6 +162,26 @@ public class DtoMaker {
 			sb.append(buildDtoClass(className, fields, subLists, dtoIsListMap, prefixMap, fieldComments, key, tableColumnsMap, entityFieldTypes));
 		}
 
+		if (entityFieldTypes != null && !entityFieldTypes.isEmpty()) {
+			Set<String> allDtoFields = new LinkedHashSet<>();
+			for (LinkedHashSet<String> fields : dtoFields.values()) {
+				allDtoFields.addAll(fields);
+			}
+			List<String> unmapped = new ArrayList<>();
+			for (String f : allDtoFields) {
+				if (!entityFieldTypes.containsKey(f)) {
+					unmapped.add(f);
+				}
+			}
+			if (!unmapped.isEmpty()) {
+				sb.append("\n\n");
+				sb.append("// ========== DTO 欄位未對應到 Entity（以下欄位可能 Entity 漏了）==========\n");
+				for (String f : unmapped) {
+					sb.append("// ").append(f).append("\n");
+				}
+			}
+		}
+
 		return sb.toString();
 	}
 
