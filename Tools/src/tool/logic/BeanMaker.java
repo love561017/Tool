@@ -76,25 +76,34 @@ public class BeanMaker {
         String columnBlock = sql.substring(afterSelect, fromIdx);
         String[] lines = columnBlock.split("\n");
 
+        // Accumulate multi-line expressions: a leading comma at depth 0 starts a new column;
+        // continuation lines (including those inside parentheses) are joined with a space.
         String pendingComment = null;
+        StringBuilder accum = new StringBuilder();
+        String accumComment = null;
+        int parenDepth = 0;
 
         for (String line : lines) {
             String trimmed = line.trim();
             if (trimmed.isEmpty()) continue;
 
-            // Strip leading comma
-            if (trimmed.startsWith(",")) {
+            // A leading comma at depth 0 means a new column is starting — flush the current one
+            if (trimmed.startsWith(",") && parenDepth == 0) {
+                if (accum.length() > 0) {
+                    ColumnInfo col = parseExpression(accum.toString().trim(), accumComment);
+                    if (col != null) result.add(col);
+                    accum = new StringBuilder();
+                    accumComment = null;
+                }
                 trimmed = trimmed.substring(1).trim();
+                if (trimmed.isEmpty()) continue;
             }
-            if (trimmed.isEmpty()) continue;
 
             // Comment-only line → becomes preceding comment for next column
             if (trimmed.startsWith("--")) {
                 String text = trimmed.substring(2).trim()
                         .replaceAll("^[\"']+|[\"']+$", "").trim();
-                if (!text.isEmpty()) {
-                    pendingComment = text;
-                }
+                if (!text.isEmpty()) pendingComment = text;
                 continue;
             }
 
@@ -106,14 +115,26 @@ public class BeanMaker {
                 trimmed = trimmed.substring(0, inlineIdx).trim();
             }
 
-            // Preceding comment takes priority over inline comment
-            String comment = (pendingComment != null) ? pendingComment : inlineComment;
-            pendingComment = null;
-
-            ColumnInfo col = parseExpression(trimmed, comment);
-            if (col != null) {
-                result.add(col);
+            // Set comment on the first line of this expression
+            if (accum.length() == 0) {
+                accumComment = (pendingComment != null) ? pendingComment : inlineComment;
+                pendingComment = null;
             }
+
+            // Update paren depth for this line's characters
+            for (char c : trimmed.toCharArray()) {
+                if (c == '(') parenDepth++;
+                else if (c == ')') parenDepth--;
+            }
+
+            if (accum.length() > 0) accum.append(" ");
+            accum.append(trimmed);
+        }
+
+        // Flush the last accumulated expression
+        if (accum.length() > 0) {
+            ColumnInfo col = parseExpression(accum.toString().trim(), accumComment);
+            if (col != null) result.add(col);
         }
 
         return result;

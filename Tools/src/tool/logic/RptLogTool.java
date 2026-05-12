@@ -23,6 +23,7 @@ import tool.swing.RptLogToolMain;
 public class RptLogTool {
 
 	private Connection conn;
+	private boolean isDb2;
 	private StringBuffer test;
 	private StringBuffer delete;
 
@@ -52,6 +53,7 @@ public class RptLogTool {
 	}
 
 	public RptLogTool(String jdbc) {
+		isDb2 = jdbc.startsWith("DB2:");
 		try {
 			conn = Main.getConnection(jdbc);
 		} catch (Exception e) {
@@ -157,8 +159,12 @@ public class RptLogTool {
 		try {
 			StringBuffer selectSql = new StringBuffer();
 			List<String> values = new ArrayList<>();
-			selectSql.append(" SELECT TOP ");
-			selectSql.append(StringUtils.isNotBlank(tp.getMaxData().getText()) ? tp.getMaxData().getText() : 100);
+			String maxRows = StringUtils.isNotBlank(tp.getMaxData().getText()) ? tp.getMaxData().getText() : "100";
+			if (!isDb2) {
+				selectSql.append(" SELECT TOP ").append(maxRows);
+			} else {
+				selectSql.append(" SELECT");
+			}
 			selectSql.append(" * FROM RPT_REPORT_LOG ");
 			String Where = " WHERE ";
 			if (null != tp.getDatePicker().getDate()) {
@@ -180,7 +186,10 @@ public class RptLogTool {
 				values.add(tp.getUserId().getText());
 				Where = " AND ";
 			}
-			selectSql.append(" ORDER BY VER DESC  ");
+			selectSql.append(" ORDER BY VER DESC ");
+			if (isDb2) {
+				selectSql.append(" FETCH FIRST ").append(maxRows).append(" ROWS ONLY ");
+			}
 			pstmt = conn.prepareStatement(selectSql.toString());
 			int i = 1;
 			for (String val : values) {

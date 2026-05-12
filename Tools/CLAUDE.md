@@ -44,9 +44,11 @@
 
 ### `ConnectionHelper`
 - Singleton，管理各 DB 的連線（懶載入）
-- Spring XML 載入 DataSource bean，`@` 替換成 DB 名稱對應多個 MSSQL 資料庫
-- 支援的資料來源（定義在 `Main.java`）：永豐、玉山、台新、中信、中信個人、LINEBANK
-- 密碼用 jasypt 解密，password key 來自 `jdbc.properties` 的 `username` 欄位
+- MSSQL：Spring XML 載入 DataSource bean，`@` 替換成 DB 名稱；密碼用 jasypt 解密，key 來自 `jdbc.properties` 的 `username` 欄位
+- DB2：`dataSourceMap` 的 value 以 `DB2:` 開頭（後接完整 JDBC URL）；`ConnectionHelper` 偵測此 prefix 直接建立 `BasicDataSource`，帳密從 `jdbc.properties` 的 `db2.username` / `db2.pwd` 讀取（明文）
+- 支援的資料來源（定義在 `Main.java`）：永豐、玉山、台新、中信、中信個人、LINEBANK（以上 MSSQL）、台銀（DB2）
+- `Main.getNames()` 亦依 `DB2:` prefix 切換查詢：MSSQL 用 `sys.extended_properties`；DB2 用 `SYSCAT.TABLES` / `SYSCAT.COLUMNS`（以欄位序號取值，不依賴 alias 名稱）
+- 需要 DB2 JDBC driver（`db2jcc4.jar`）加入 classpath
 
 ### `StringHelper`
 - `scalarMethod(String type)` — 將 Java 型別或 `StandardBasicTypes` 名稱對應至 `SQLQueryBuilder` 的 scalar 方法名稱

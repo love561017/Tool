@@ -23,6 +23,7 @@ import tool.swing.TableBackupMain;
 public class TableBackup {
 
 	private Connection conn;
+	private boolean isDb2;
 	private StringBuffer test;
 	private StringBuffer delete;
 
@@ -34,6 +35,13 @@ public class TableBackup {
 			.append("   , STRING_AGG(CAST(DATA_TYPE AS NVARCHAR(MAX)), ', ') AS DATA_TYPE ")
 			.append("   , COUNT(TABLE_NAME) AS COLUMN_COUNT ").append(" FROM INFORMATION_SCHEMA.COLUMNS ")
 			.append(" WHERE TABLE_NAME = ? ").append(" GROUP BY TABLE_NAME ");
+
+	private static final String INSERT_SQL_DB2 =
+			" SELECT LISTAGG(COLNAME, ', ') WITHIN GROUP (ORDER BY COLNO) AS COLUMNS_NAM"
+			+ " , LISTAGG(TYPENAME, ', ') WITHIN GROUP (ORDER BY COLNO) AS DATA_TYPE"
+			+ " , COUNT(*) AS COLUMN_COUNT"
+			+ " FROM SYSCAT.COLUMNS"
+			+ " WHERE TABNAME = ? AND TABSCHEMA = CURRENT SCHEMA";
 
 	public void prcs(TableBackupMain.TableBackupParm tp) {
 		test = new StringBuffer();
@@ -67,6 +75,7 @@ public class TableBackup {
 	}
 
 	public TableBackup(String jdbc) {
+		isDb2 = jdbc.startsWith("DB2:");
 		try {
 			conn = Main.getConnection(jdbc);
 		} catch (Exception e) {
@@ -90,7 +99,7 @@ public class TableBackup {
 		BufferedWriter writer = null;
 		String table = getStringBetween(sql, " FROM ", " WHERE ");
 		try {
-			pstmt = conn.prepareStatement(INSERT_SQL.toString());
+			pstmt = conn.prepareStatement(isDb2 ? INSERT_SQL_DB2 : INSERT_SQL.toString());
 			pstmt.setString(1, table);
 			rs = pstmt.executeQuery();
 			String columnsNam = null;
@@ -99,11 +108,14 @@ public class TableBackup {
 			String[] dataType = null;
 			int columnCount = 0;
 			while (rs.next()) {
-				insertSql = rs.getString("INSERT_SQL");
+				if (!isDb2) insertSql = rs.getString("INSERT_SQL");
 				columnsNam = rs.getString("COLUMNS_NAM");
 				columnCount = rs.getInt("COLUMN_COUNT");
 				dataType = rs.getString("DATA_TYPE").split(", ");
 				oid = columnsNam.split(",")[0].trim();
+			}
+			if (isDb2) {
+				insertSql = "INSERT INTO " + table.trim() + "( %s )\nVALUES( %s )";
 			}
 			pstmt = conn.prepareStatement(sql.replace("*", columnsNam));
 			rs = pstmt.executeQuery();
@@ -165,15 +177,14 @@ public class TableBackup {
 			}
 			delete.append("DELETE " + sql.substring(sql.indexOf("*") + 1));
 			delete.append("\r\n");
-			delete.append("GO");
-			delete.append("\r\n");
+			if (!isDb2) delete.append("GO\r\n");
 
 			test.append("--新增測試資料\r\n");
 			test.append(testSql);
 			test.append("\r\n");
 			test.append("--刪除測試資料\r\n");
-			test.append("DELETE FROM " + table + " WHERE " + oid + " = 'T' \r\n GO ");
-			test.append("\r\n");
+			test.append("DELETE FROM " + table + " WHERE " + oid + " = 'T'\r\n");
+			if (!isDb2) test.append("GO\r\n");
 			rs.close();
 			pstmt.close();
 			if (null != writer) {

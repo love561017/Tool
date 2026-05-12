@@ -45,22 +45,45 @@ public class ConnectionHelper {
 
 	public DataSource getDataSource(String dbName) {
 		if (null == dataSourceMap.get(dbName)) {
-			context = new ClassPathXmlApplicationContext("spring.xml");
-			BasicDataSource basicDataSource = (BasicDataSource) context.getBean("dataSource");
-			String localPath = Paths.get("", "jdbc.properties").toAbsolutePath().toString();
-			try (FileInputStream fs = new FileInputStream(localPath)) {
-				Properties prop = new Properties();
-				prop.load(fs);
-				BasicTextEncryptor bte = new BasicTextEncryptor();
-				bte.setPassword(prop.getProperty("username"));
-				basicDataSource.setPassword(bte.decrypt(prop.getProperty("pwd")));
-				basicDataSource.setUrl(basicDataSource.getUrl().replace("@", dbName));
-			} catch (IOException e) {
-				logger.error("getDataSource error", e);
+			if (dbName.startsWith("DB2:")) {
+				dataSourceMap.put(dbName, createDb2DataSource(dbName.substring(4)));
+			} else {
+				context = new ClassPathXmlApplicationContext("spring.xml");
+				BasicDataSource basicDataSource = (BasicDataSource) context.getBean("dataSource");
+				String localPath = Paths.get("", "jdbc.properties").toAbsolutePath().toString();
+				try (FileInputStream fs = new FileInputStream(localPath)) {
+					Properties prop = new Properties();
+					prop.load(fs);
+					BasicTextEncryptor bte = new BasicTextEncryptor();
+					bte.setPassword(prop.getProperty("username"));
+					basicDataSource.setPassword(bte.decrypt(prop.getProperty("pwd")));
+					basicDataSource.setUrl(basicDataSource.getUrl().replace("@", dbName));
+				} catch (IOException e) {
+					logger.error("getDataSource error", e);
+				}
+				dataSourceMap.put(dbName, basicDataSource);
 			}
-			dataSourceMap.put(dbName, basicDataSource);
 		}
 		return dataSourceMap.get(dbName);
+	}
+
+	private DataSource createDb2DataSource(String url) {
+		BasicDataSource ds = new BasicDataSource();
+		ds.setDriverClassName("com.ibm.db2.jcc.DB2Driver");
+		ds.setUrl(url);
+		ds.setMaxActive(10);
+		ds.setMaxWait(6000);
+		ds.setDefaultAutoCommit(true);
+		String localPath = Paths.get("", "jdbc.properties").toAbsolutePath().toString();
+		try (FileInputStream fs = new FileInputStream(localPath)) {
+			Properties prop = new Properties();
+			prop.load(fs);
+			ds.setUsername(prop.getProperty("db2.username"));
+			ds.setPassword(prop.getProperty("db2.pwd"));
+		} catch (IOException e) {
+			logger.error("createDb2DataSource error", e);
+		}
+		return ds;
 	}
 
 

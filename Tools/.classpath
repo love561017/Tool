@@ -34,5 +34,6 @@
 	<classpathentry kind="lib" path="src/lib/json-lib-2.4-jdk15.jar"/>
 	<classpathentry kind="lib" path="src/lib/ezmorph-1.0.6.jar"/>
 	<classpathentry kind="lib" path="src/lib/swingx-1.6.1.jar"/>
+	<classpathentry kind="lib" path="src/lib/db2jcc4.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

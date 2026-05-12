@@ -50,6 +50,14 @@ public class Main extends JFrame {
 			+ "FROM INFORMATION_SCHEMA.TABLES c\r\n" + "JOIN sys.extended_properties ep\r\n"
 			+ "  ON ep.major_id = OBJECT_ID(c.TABLE_NAME)\r\n" + "  AND ep.name = 'COMMENT'  AND ep.minor_id = 0";
 
+	private final static String GET_CLOUMNS_NAME_DB2 = "SELECT COLNAME, REMARKS\n"
+			+ "FROM SYSCAT.COLUMNS\n"
+			+ "WHERE TABSCHEMA = CURRENT SCHEMA";
+
+	private final static String GET_TABLES_NAME_DB2 = "SELECT TABNAME, REMARKS\n"
+			+ "FROM SYSCAT.TABLES\n"
+			+ "WHERE TABSCHEMA = CURRENT SCHEMA AND TYPE = 'T'";
+
 	public static Map<String, String> tableNamesMap = new HashMap<>();
 	public static Map<String, String> tableColumnsMap = new HashMap<>();
 	public static Map<String, String> dataSourceMap = new LinkedHashMap<>();
@@ -64,6 +72,7 @@ public class Main extends JFrame {
 			dataSourceMap.put("中信", "CTBC_AM_DEV");
 			dataSourceMap.put("中信個人", "CTBC_DD_DEV");
 			dataSourceMap.put("LINEBANK", "LINEBANK_AM_DEV");
+			dataSourceMap.put("台銀", "DB2:jdbc:db2://172.17.15.107:50000/BUDB:currentSchema=AM_DEV;currentFunctionPath=AM_DEV;");
 			
 			
 			
@@ -140,21 +149,22 @@ public class Main extends JFrame {
 	}
 
 	public static String getNames(String jdbc) {
+		boolean isDb2 = jdbc.startsWith("DB2:");
 		Connection conn = null;
 		PreparedStatement pstmt = null;
 		ResultSet rs = null;
 		String result = "";
 		try {
 			conn = getConnection(jdbc);
-			pstmt = conn.prepareStatement(GET_TABLES_NAME);
+			pstmt = conn.prepareStatement(isDb2 ? GET_TABLES_NAME_DB2 : GET_TABLES_NAME);
 			rs = pstmt.executeQuery();
 			while (rs.next()) {
-				tableNamesMap.put(rs.getString("TABLE_NAME"), rs.getString("Table Description"));
+				tableNamesMap.put(rs.getString(1), rs.getString(2));
 			}
-			pstmt = conn.prepareStatement(GET_CLOUMNS_NAME);
+			pstmt = conn.prepareStatement(isDb2 ? GET_CLOUMNS_NAME_DB2 : GET_CLOUMNS_NAME);
 			rs = pstmt.executeQuery();
 			while (rs.next()) {
-				tableColumnsMap.put(rs.getString("COLUMN_NAME"), rs.getString("Column Description"));
+				tableColumnsMap.put(rs.getString(1), rs.getString(2));
 			}
 			rs.close();
 			pstmt.close();
